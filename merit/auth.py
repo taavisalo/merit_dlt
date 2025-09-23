@@ -2,6 +2,7 @@ import hmac
 import hashlib
 import base64
 from typing import Any
+from dlt.common.configuration.specs.base_configuration import configspec
 from dlt.sources.helpers.rest_client.auth import AuthConfigBase
 import orjson
 from requests.models import PreparedRequest
@@ -23,6 +24,7 @@ def merit_dumps(obj: Any) -> bytes:
         default=serialize_date,
     )
 
+@configspec
 class MeritAuth(AuthConfigBase):
     """Merit Aktiva API authentication.
     
