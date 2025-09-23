@@ -41,9 +41,9 @@ source .venv/bin/activate  # On Unix/macOS
 .venv\Scripts\activate  # On Windows
 ```
 
-3. Install dependencies:
+3. Install dependencies (remove `--extra dev` to skip dev dependencies):
 ```bash
-uv sync
+uv sync --extra dev
 ```
 
 ## Configuration
