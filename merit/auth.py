@@ -2,6 +2,8 @@ import hmac
 import hashlib
 import base64
 from typing import Any
+from urllib.parse import urlencode
+
 from dlt.common.configuration.specs.base_configuration import configspec
 from dlt.sources.helpers.rest_client.auth import AuthConfigBase
 import orjson
@@ -23,6 +25,7 @@ def merit_dumps(obj: Any) -> bytes:
         option=orjson.OPT_PASSTHROUGH_DATETIME,
         default=serialize_date,
     )
+
 
 @configspec
 class MeritAuth(AuthConfigBase):
@@ -73,7 +76,7 @@ class MeritAuth(AuthConfigBase):
             
             # Parse parameters into dict
             from urllib.parse import parse_qs
-            url_params: dict[str, list[str]] = parse_qs(params_str)
+            url_params: dict[str, list[str]] = parse_qs(params_str, keep_blank_values=True)
             
             # Convert single item lists to single values
             url_params_single = {k: v[0] if len(v) == 1 else v for k, v in url_params.items()}
@@ -86,24 +89,31 @@ class MeritAuth(AuthConfigBase):
             
             # Update request body
             request.body = merit_dumps(data)
+            request.headers["Content-Type"] = "application/json; charset=utf-8"
+            request.headers["Content-Length"] = str(len(request.body))
 
-        # Generate timestamp in Merit's format (UTC)
         timestamp = format_auth_timestamp()
         
-        # Create signature data string using merit_dumps
-        data_string = f"{self.api_id}{timestamp}{merit_dumps(data).decode()}"
+        body = request.body or b""
+        if isinstance(body, str):
+            body = body.encode()
+        data_to_sign = f"{self.api_id}{timestamp}".encode() + body
         
         # Generate signature
         signature = base64.b64encode(
             hmac.new(
                 self.api_key.encode(),
-                data_string.encode(),
+                data_to_sign,
                 hashlib.sha256
             ).digest()
         ).decode()
         
         # Add auth parameters to URL
-        auth_params = f"ApiId={self.api_id}&timestamp={timestamp}&signature={signature}"
+        auth_params = urlencode({
+            "ApiId": self.api_id,
+            "timestamp": timestamp,
+            "signature": signature,
+        })
         
         # Ensure we add auth params after any existing params
         if '?' in request.url:
@@ -112,5 +122,3 @@ class MeritAuth(AuthConfigBase):
             request.url = f"{request.url}?{auth_params}"
         
         return request
-
-    
