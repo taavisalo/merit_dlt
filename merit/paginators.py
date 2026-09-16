@@ -16,7 +16,7 @@ class MeritDatePaginator(BasePaginator):
     
     Args:
         start_date (datetime): The overall start date for data retrieval
-        end_date (datetime): The overall end date for data retrieval
+        end_date (datetime): Inclusive for DocumentDate, exclusive for ChangedDate.
         interval_days (int, optional): Number of days per page. Defaults to 7.
             Cannot exceed 90 days (3 months).
         date_type (int, optional): Merit API DateType parameter. 
@@ -44,21 +44,27 @@ class MeritDatePaginator(BasePaginator):
         
         self.interval_days = interval_days
         self.date_type = date_type
+        self._inclusive_end = date_type == 0
         
         # Set the overall period
         self.start_date = start_date
         self.end_date = end_date
 
+    @property
+    def _page_days(self) -> int:
+        # A one-day exclusive window must still advance its cursor.
+        return self.interval_days - 1 if self._inclusive_end else max(1, self.interval_days - 1)
+
     def init_request(self, request: Request) -> None:
         """Initialize the first request with the first period."""
         # Prefer existing start date from incremental loader
-        if "PeriodStart" in request.params:
+        if request.params and "PeriodStart" in request.params:
             self.current_start = parse_date(request.params["PeriodStart"])
         else:
             self.current_start = self.start_date
 
         self.current_end = min(
-            self.current_start + timedelta(days=self.interval_days - 1),
+            self.current_start + timedelta(days=self._page_days),
             self.end_date
         )
 
@@ -70,20 +76,18 @@ class MeritDatePaginator(BasePaginator):
         Determines if there are more pages by checking if the current end date
         has reached the overall end date.
         """
-        # Calculate the next period
-        # Start from the same date where last ended,
-        # otherwise we are missing the records on the change day,
-        # API gets records that are => PeriodStart and < PeriodEnd
-        next_start = self.current_end
-        
-        # Check if we've reached the end
-        if next_start.date() >= self.end_date.date():
+        # DocumentDate includes both boundaries; ChangedDate retains its
+        # existing exclusive-end cursor behavior.
+        next_start = self.current_end + timedelta(days=int(self._inclusive_end))
+        finished = (next_start.date() > self.end_date.date() if self._inclusive_end
+                    else next_start.date() >= self.end_date.date())
+        if finished:
             self._has_next_page = False
             return
 
         self._has_next_page = True
         next_end = min(
-            next_start + timedelta(days=self.interval_days - 1),
+            next_start + timedelta(days=self._page_days),
             self.end_date
         )
         self.current_start = next_start
